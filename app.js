@@ -1,30 +1,28 @@
 /**
- * Master Merge Tool — Multi-format PDF Creator
+ * Master Merge Tool — Universal Document Merger
  * 
- * Features:
- *   - Merge PDFs, images, and text files into one PDF
- *   - Drag & drop folder/file upload
- *   - Manual drag-to-reorder
- *   - PDF compression (Low/Medium/High quality)
- *   - Real-time progress indicator
- *
  * Supported formats:
  *   - PDF (.pdf)
  *   - Images (.jpg, .jpeg, .png, .gif, .webp, .bmp, .tiff)
+ *   - Word (.docx, .doc)
+ *   - Excel (.xlsx, .xls, .csv)
  *   - Text (.txt)
+ *   - Markdown (.md)
+ *   - HTML (.html, .htm)
+ *   - PowerPoint (.pptx) - text extraction
  *
  * Run:
  *   npm install
  *   npm start
- *
- * Open:
- *   http://localhost:3000
  */
 
 const express = require("express");
 const multer = require("multer");
 const { PDFDocument, rgb, StandardFonts } = require("pdf-lib");
 const sharp = require("sharp");
+const mammoth = require("mammoth");
+const XLSX = require("xlsx");
+const { marked } = require("marked");
 
 const app = express();
 app.use(express.json());
@@ -34,126 +32,250 @@ const upload = multer({
   limits: { fileSize: 250 * 1024 * 1024 },
 });
 
-// Supported file extensions
+// Supported file extensions by category
 const SUPPORTED = {
   pdf: ['.pdf'],
   image: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif'],
+  word: ['.docx', '.doc'],
+  excel: ['.xlsx', '.xls', '.csv'],
   text: ['.txt'],
+  markdown: ['.md', '.markdown'],
+  html: ['.html', '.htm'],
+  powerpoint: ['.pptx', '.ppt'],
 };
 
 function getFileType(filename) {
   const ext = (filename || '').toLowerCase().match(/\.[^.]+$/)?.[0] || '';
-  if (SUPPORTED.pdf.includes(ext)) return 'pdf';
-  if (SUPPORTED.image.includes(ext)) return 'image';
-  if (SUPPORTED.text.includes(ext)) return 'text';
+  for (const [type, exts] of Object.entries(SUPPORTED)) {
+    if (exts.includes(ext)) return type;
+  }
   return null;
 }
 
 function naturalSort(a, b) {
-  const ax = [];
-  const bx = [];
+  const ax = [], bx = [];
   a.replace(/(\d+)|(\D+)/g, (_, $1, $2) => ax.push([$1 || Infinity, $2 || ""]));
   b.replace(/(\d+)|(\D+)/g, (_, $1, $2) => bx.push([$1 || Infinity, $2 || ""]));
   while (ax.length && bx.length) {
-    const an = ax.shift();
-    const bn = bx.shift();
+    const an = ax.shift(), bn = bx.shift();
     const nn = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
     if (nn) return nn;
   }
   return ax.length - bx.length;
 }
 
-// Convert image buffer to PDF page
+// Strip HTML tags for plain text
+function stripHtml(html) {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<td[^>]*>/gi, '\t')
+    .replace(/<th[^>]*>/gi, '\t')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Convert image buffer to PDF-ready JPEG
 async function imageToPdfPage(buffer, quality = 'medium') {
-  // Quality settings for compression
-  const qualitySettings = {
+  const settings = {
     low: { jpeg: 50, resize: 1200 },
     medium: { jpeg: 75, resize: 2000 },
     high: { jpeg: 95, resize: 4000 },
-  };
-  const settings = qualitySettings[quality] || qualitySettings.medium;
+  }[quality] || { jpeg: 75, resize: 2000 };
 
-  // Process image with sharp
   let img = sharp(buffer);
   const metadata = await img.metadata();
   
-  // Resize if larger than max dimension (for compression)
-  const maxDim = settings.resize;
-  if (metadata.width > maxDim || metadata.height > maxDim) {
-    img = img.resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true });
+  if (metadata.width > settings.resize || metadata.height > settings.resize) {
+    img = img.resize(settings.resize, settings.resize, { fit: 'inside', withoutEnlargement: true });
   }
 
-  // Convert to JPEG for better compression (unless PNG with transparency)
   const jpegBuffer = await img.jpeg({ quality: settings.jpeg }).toBuffer();
   const processedMeta = await sharp(jpegBuffer).metadata();
 
-  return {
-    buffer: jpegBuffer,
-    width: processedMeta.width,
-    height: processedMeta.height,
-  };
+  return { buffer: jpegBuffer, width: processedMeta.width, height: processedMeta.height };
 }
 
-// Convert text to PDF pages
-async function textToPdfPages(text, pdfDoc) {
-  const font = await pdfDoc.embedFont(StandardFonts.Courier);
-  const fontSize = 11;
-  const margin = 50;
-  const pageWidth = 612; // Letter size
-  const pageHeight = 792;
-  const lineHeight = fontSize * 1.4;
-  const maxWidth = pageWidth - margin * 2;
-  const maxLines = Math.floor((pageHeight - margin * 2) / lineHeight);
+// Convert Word document to text
+async function wordToText(buffer) {
+  try {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value || '';
+  } catch (err) {
+    // Fallback for .doc files or errors
+    return buffer.toString('utf-8').replace(/[^\x20-\x7E\n\r\t]/g, ' ');
+  }
+}
 
-  // Split text into lines
+// Convert Excel/CSV to formatted text
+function excelToText(buffer, filename) {
+  try {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    let output = '';
+
+    workbook.SheetNames.forEach((sheetName, idx) => {
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      
+      if (workbook.SheetNames.length > 1) {
+        output += `\n${'═'.repeat(60)}\n`;
+        output += `  SHEET: ${sheetName}\n`;
+        output += `${'═'.repeat(60)}\n\n`;
+      }
+
+      if (data.length === 0) {
+        output += '(Empty sheet)\n';
+        return;
+      }
+
+      // Calculate column widths
+      const colWidths = [];
+      data.forEach(row => {
+        row.forEach((cell, i) => {
+          const len = String(cell).length;
+          colWidths[i] = Math.min(Math.max(colWidths[i] || 0, len), 30);
+        });
+      });
+
+      // Format as table
+      data.forEach((row, rowIdx) => {
+        const line = row.map((cell, i) => {
+          const str = String(cell);
+          return str.substring(0, 30).padEnd(colWidths[i] || 10);
+        }).join(' │ ');
+        output += line + '\n';
+
+        // Header separator
+        if (rowIdx === 0) {
+          output += colWidths.map(w => '─'.repeat(w)).join('─┼─') + '\n';
+        }
+      });
+
+      output += '\n';
+    });
+
+    return output.trim();
+  } catch (err) {
+    return `Error reading spreadsheet: ${err.message}`;
+  }
+}
+
+// Convert Markdown to text
+function markdownToText(buffer) {
+  const md = buffer.toString('utf-8');
+  const html = marked(md);
+  return stripHtml(html);
+}
+
+// Convert HTML to text
+function htmlToText(buffer) {
+  const html = buffer.toString('utf-8');
+  return stripHtml(html);
+}
+
+// Extract text from PowerPoint
+function pptxToText(buffer) {
+  try {
+    // PPTX is a ZIP file, use XLSX to read the XML content
+    const zip = XLSX.read(buffer, { type: 'buffer', bookType: 'xlsx' });
+    let text = '';
+    
+    // Try to extract text from slides
+    Object.keys(zip.Sheets || {}).forEach(name => {
+      const sheet = zip.Sheets[name];
+      const content = XLSX.utils.sheet_to_txt(sheet);
+      if (content) text += content + '\n\n';
+    });
+
+    if (!text.trim()) {
+      // Fallback: extract readable strings from buffer
+      const str = buffer.toString('utf-8');
+      const matches = str.match(/<a:t>([^<]+)<\/a:t>/g) || [];
+      text = matches.map(m => m.replace(/<[^>]+>/g, '')).join('\n');
+    }
+
+    return text || '(Could not extract text from presentation)';
+  } catch (err) {
+    return `(PowerPoint extraction error: ${err.message})`;
+  }
+}
+
+// Render text to PDF pages with title
+async function textToPdfPages(text, pdfDoc, title = null) {
+  const font = await pdfDoc.embedFont(StandardFonts.Courier);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.CourierBold);
+  const fontSize = 10;
+  const margin = 50;
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const lineHeight = fontSize * 1.5;
+  const maxWidth = pageWidth - margin * 2;
+  const maxLines = Math.floor((pageHeight - margin * 2 - (title ? 40 : 0)) / lineHeight);
+
+  // Word wrap
   const lines = text.split('\n');
   const wrappedLines = [];
 
   for (const line of lines) {
-    if (line.length === 0) {
-      wrappedLines.push('');
-      continue;
-    }
+    if (!line) { wrappedLines.push(''); continue; }
     
-    // Word wrap
     const words = line.split(' ');
-    let currentLine = '';
+    let current = '';
     
     for (const word of words) {
-      const testLine = currentLine ? currentLine + ' ' + word : word;
-      const width = font.widthOfTextAtSize(testLine, fontSize);
-      
-      if (width > maxWidth && currentLine) {
-        wrappedLines.push(currentLine);
-        currentLine = word;
+      const test = current ? current + ' ' + word : word;
+      if (font.widthOfTextAtSize(test, fontSize) > maxWidth && current) {
+        wrappedLines.push(current);
+        current = word;
       } else {
-        currentLine = testLine;
+        current = test;
       }
     }
-    if (currentLine) wrappedLines.push(currentLine);
+    if (current) wrappedLines.push(current);
   }
 
   // Create pages
-  const pages = [];
   for (let i = 0; i < wrappedLines.length; i += maxLines) {
     const pageLines = wrappedLines.slice(i, i + maxLines);
     const page = pdfDoc.addPage([pageWidth, pageHeight]);
-    
     let y = pageHeight - margin;
+
+    // Add title on first page
+    if (i === 0 && title) {
+      page.drawText(title, {
+        x: margin,
+        y: y - 14,
+        size: 14,
+        font: boldFont,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      y -= 40;
+    }
+
     for (const line of pageLines) {
       page.drawText(line, {
         x: margin,
         y: y - fontSize,
         size: fontSize,
-        font: font,
-        color: rgb(0.1, 0.1, 0.1),
+        font,
+        color: rgb(0.15, 0.15, 0.15),
       });
       y -= lineHeight;
     }
-    pages.push(page);
   }
-
-  return pages;
 }
 
 app.get("/", (_req, res) => {
@@ -165,55 +287,55 @@ app.get("/", (_req, res) => {
   <title>Master Merge Tool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-deep: #0a0f0d;
-      --bg-surface: #111916;
-      --bg-elevated: #182019;
-      --bg-hover: #1f2a22;
-      --border: #243027;
-      --border-active: #354538;
-      --text: #e4ebe6;
-      --text-muted: #8b9a8f;
-      --text-dim: #566259;
-      --accent: #4ade80;
-      --accent-hover: #6ee7a0;
-      --accent-dim: #22633c;
-      --accent-glow: rgba(74, 222, 128, 0.1);
-      --warning: #fbbf24;
-      --error: #f87171;
-      --error-bg: rgba(248, 113, 113, 0.1);
+      --bg-deep: #09090b;
+      --bg-surface: #111113;
+      --bg-elevated: #18181b;
+      --bg-hover: #1f1f23;
+      --border: #27272a;
+      --border-active: #3f3f46;
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #f97316;
+      --accent-hover: #fb923c;
+      --accent-dim: #7c2d12;
+      --accent-glow: rgba(249, 115, 22, 0.1);
+      --success: #22c55e;
+      --error: #ef4444;
+      --error-bg: rgba(239, 68, 68, 0.1);
       --pdf-color: #ef4444;
-      --image-color: #8b5cf6;
-      --text-color: #3b82f6;
+      --image-color: #a855f7;
+      --word-color: #3b82f6;
+      --excel-color: #22c55e;
+      --text-file-color: #71717a;
+      --ppt-color: #f97316;
     }
 
     * { box-sizing: border-box; }
-    
     html { background: var(--bg-deep); }
     
     body {
       margin: 0;
       min-height: 100vh;
       background: 
-        radial-gradient(ellipse 100% 80% at 20% -30%, rgba(74, 222, 128, 0.07), transparent 50%),
-        radial-gradient(ellipse 80% 60% at 80% 120%, rgba(74, 222, 128, 0.05), transparent 50%),
-        repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(74, 222, 128, 0.01) 50px, rgba(74, 222, 128, 0.01) 51px),
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(249, 115, 22, 0.08), transparent),
+        radial-gradient(ellipse 50% 50% at 100% 50%, rgba(168, 85, 247, 0.04), transparent),
         var(--bg-deep);
       color: var(--text);
-      font-family: 'Source Sans 3', sans-serif;
+      font-family: 'Inter', -apple-system, sans-serif;
       font-size: 15px;
       line-height: 1.6;
     }
 
     .container {
-      max-width: 900px;
+      max-width: 920px;
       margin: 0 auto;
       padding: 48px 24px 80px;
     }
 
-    /* Header */
     header {
       text-align: center;
       margin-bottom: 40px;
@@ -223,34 +345,22 @@ app.get("/", (_req, res) => {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      margin-bottom: 20px;
-    }
-
-    .logo-block {
-      width: 14px;
-      height: 20px;
-      background: var(--accent);
-      border-radius: 3px;
-    }
-
-    .logo-block:nth-child(2) {
-      height: 26px;
-      opacity: 0.7;
-    }
-
-    .logo-block:nth-child(3) {
-      height: 22px;
-      opacity: 0.5;
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, var(--accent) 0%, #ea580c 100%);
+      border-radius: 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 40px rgba(249, 115, 22, 0.3);
+      font-size: 32px;
     }
 
     h1 {
-      font-family: 'Playfair Display', serif;
-      font-size: 48px;
+      font-family: 'Fraunces', serif;
+      font-size: 52px;
       font-weight: 700;
       margin: 0 0 8px;
-      letter-spacing: -1px;
-      background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
+      letter-spacing: -2px;
+      background: linear-gradient(135deg, var(--text) 30%, var(--accent) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -261,91 +371,89 @@ app.get("/", (_req, res) => {
       font-size: 17px;
     }
 
-    /* Cards */
     .card {
       background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
+      border-radius: 20px;
+      padding: 28px;
       margin-bottom: 20px;
     }
 
     .card-header {
       display: flex;
-      align-items: center;
-      gap: 14px;
-      margin-bottom: 20px;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
     }
 
     .card-number {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%);
-      color: var(--bg-deep);
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      color: white;
       font-weight: 700;
-      font-size: 14px;
-      border-radius: 10px;
-      font-family: 'IBM Plex Mono', monospace;
+      font-size: 15px;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      flex-shrink: 0;
     }
 
     .card-title {
       font-weight: 600;
-      font-size: 17px;
+      font-size: 18px;
+      margin-bottom: 4px;
     }
 
     .card-subtitle {
-      font-size: 13px;
+      font-size: 14px;
       color: var(--text-dim);
-      margin-top: 2px;
     }
 
-    /* Drop Zone */
+    /* Dropzone */
     .dropzone {
       position: relative;
       border: 2px dashed var(--border-active);
-      border-radius: 14px;
-      padding: 56px 24px;
+      border-radius: 16px;
+      padding: 48px 24px;
       text-align: center;
       cursor: pointer;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
       background: var(--bg-elevated);
     }
 
-    .dropzone:hover {
+    .dropzone:hover, .dropzone.drag-over {
       border-color: var(--accent);
       background: var(--accent-glow);
     }
 
     .dropzone.drag-over {
-      border-color: var(--accent);
-      background: var(--accent-glow);
       transform: scale(1.01);
-      box-shadow: 0 0 40px rgba(74, 222, 128, 0.15);
+      box-shadow: 0 0 60px rgba(249, 115, 22, 0.15);
     }
 
-    .dropzone-icon {
+    .dropzone-icons {
       display: flex;
       justify-content: center;
       gap: 8px;
       margin-bottom: 20px;
     }
 
-    .dropzone-icon span {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      font-size: 18px;
+    .dropzone-icons span {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
     }
 
     .icon-pdf { background: rgba(239, 68, 68, 0.15); color: var(--pdf-color); }
-    .icon-img { background: rgba(139, 92, 246, 0.15); color: var(--image-color); }
-    .icon-txt { background: rgba(59, 130, 246, 0.15); color: var(--text-color); }
+    .icon-img { background: rgba(168, 85, 247, 0.15); color: var(--image-color); }
+    .icon-word { background: rgba(59, 130, 246, 0.15); color: var(--word-color); }
+    .icon-excel { background: rgba(34, 197, 94, 0.15); color: var(--excel-color); }
+    .icon-ppt { background: rgba(249, 115, 22, 0.15); color: var(--ppt-color); }
 
     .dropzone-text {
       font-size: 16px;
@@ -353,9 +461,7 @@ app.get("/", (_req, res) => {
       margin-bottom: 8px;
     }
 
-    .dropzone-text strong {
-      color: var(--accent);
-    }
+    .dropzone-text strong { color: var(--accent); }
 
     .dropzone-hint {
       font-size: 13px;
@@ -369,31 +475,35 @@ app.get("/", (_req, res) => {
       cursor: pointer;
     }
 
-    /* Supported Formats */
+    /* Format tags */
     .formats {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 16px;
+      gap: 6px;
+      margin-top: 20px;
       justify-content: center;
     }
 
     .format-tag {
-      padding: 5px 10px;
+      padding: 4px 10px;
       border-radius: 6px;
-      font-size: 12px;
-      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
       font-weight: 500;
+      border: 1px solid transparent;
     }
 
-    .format-tag.pdf { background: rgba(239, 68, 68, 0.12); color: var(--pdf-color); }
-    .format-tag.image { background: rgba(139, 92, 246, 0.12); color: var(--image-color); }
-    .format-tag.text { background: rgba(59, 130, 246, 0.12); color: var(--text-color); }
+    .format-tag.pdf { background: rgba(239, 68, 68, 0.1); color: var(--pdf-color); border-color: rgba(239, 68, 68, 0.2); }
+    .format-tag.image { background: rgba(168, 85, 247, 0.1); color: var(--image-color); border-color: rgba(168, 85, 247, 0.2); }
+    .format-tag.word { background: rgba(59, 130, 246, 0.1); color: var(--word-color); border-color: rgba(59, 130, 246, 0.2); }
+    .format-tag.excel { background: rgba(34, 197, 94, 0.1); color: var(--excel-color); border-color: rgba(34, 197, 94, 0.2); }
+    .format-tag.text { background: rgba(113, 113, 122, 0.1); color: var(--text-file-color); border-color: rgba(113, 113, 122, 0.2); }
+    .format-tag.ppt { background: rgba(249, 115, 22, 0.1); color: var(--ppt-color); border-color: rgba(249, 115, 22, 0.2); }
 
     /* Stats */
     .stats {
       display: flex;
-      gap: 12px;
+      gap: 10px;
       margin-top: 20px;
       flex-wrap: wrap;
     }
@@ -402,50 +512,48 @@ app.get("/", (_req, res) => {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 14px;
+      padding: 8px 14px;
       background: var(--bg-elevated);
       border-radius: 10px;
       font-size: 13px;
       border: 1px solid var(--border);
     }
 
-    .stat-icon {
+    .stat-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
     }
 
-    .stat-icon.pdf { background: var(--pdf-color); }
-    .stat-icon.image { background: var(--image-color); }
-    .stat-icon.text { background: var(--text-color); }
-    .stat-icon.total { background: var(--accent); }
+    .stat-dot.pdf { background: var(--pdf-color); }
+    .stat-dot.image { background: var(--image-color); }
+    .stat-dot.word { background: var(--word-color); }
+    .stat-dot.excel { background: var(--excel-color); }
+    .stat-dot.text { background: var(--text-file-color); }
+    .stat-dot.ppt { background: var(--ppt-color); }
+    .stat-dot.total { background: var(--accent); }
 
     .stat-value {
-      font-family: 'IBM Plex Mono', monospace;
+      font-family: 'JetBrains Mono', monospace;
       font-weight: 500;
       color: var(--accent);
     }
 
     /* Options */
     .options {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 16px;
       margin-bottom: 24px;
       padding: 20px;
       background: var(--bg-elevated);
-      border-radius: 12px;
+      border-radius: 14px;
       border: 1px solid var(--border);
     }
 
-    .option-group {
-      flex: 1;
-      min-width: 200px;
-    }
-
-    .option-label {
+    .option-group label {
       display: block;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -458,13 +566,13 @@ app.get("/", (_req, res) => {
       padding: 10px 14px;
       background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 10px;
       color: var(--text);
-      font-family: 'Source Sans 3', sans-serif;
+      font-family: 'Inter', sans-serif;
       font-size: 14px;
       cursor: pointer;
       appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b9a8f' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 12px center;
     }
@@ -474,18 +582,12 @@ app.get("/", (_req, res) => {
       border-color: var(--accent);
     }
 
-    .quality-hint {
-      font-size: 12px;
-      color: var(--text-dim);
-      margin-top: 6px;
-    }
-
     /* File List */
     .file-list {
       list-style: none;
       margin: 0 0 20px;
       padding: 0;
-      max-height: 400px;
+      max-height: 420px;
       overflow-y: auto;
     }
 
@@ -493,10 +595,10 @@ app.get("/", (_req, res) => {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 14px 16px;
+      padding: 12px 14px;
       background: var(--bg-elevated);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       margin-bottom: 8px;
       cursor: grab;
       transition: all 0.15s ease;
@@ -508,21 +610,14 @@ app.get("/", (_req, res) => {
       background: var(--bg-hover);
     }
 
-    .file-item.dragging {
-      opacity: 0.5;
-      transform: scale(0.98);
-    }
-
-    .file-item.drag-over-item {
-      border-color: var(--accent);
-      background: var(--accent-glow);
-    }
+    .file-item.dragging { opacity: 0.5; transform: scale(0.98); }
+    .file-item.drag-over-item { border-color: var(--accent); background: var(--accent-glow); }
 
     .drag-handle {
       display: flex;
       flex-direction: column;
       gap: 3px;
-      padding: 6px 4px;
+      padding: 4px;
       opacity: 0.3;
       transition: opacity 0.15s;
     }
@@ -531,38 +626,42 @@ app.get("/", (_req, res) => {
 
     .drag-handle span {
       display: block;
-      width: 16px;
+      width: 14px;
       height: 2px;
       background: var(--text);
       border-radius: 1px;
     }
 
     .file-type {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      font-size: 14px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
       flex-shrink: 0;
     }
 
     .file-type.pdf { background: rgba(239, 68, 68, 0.12); color: var(--pdf-color); }
-    .file-type.image { background: rgba(139, 92, 246, 0.12); color: var(--image-color); }
-    .file-type.text { background: rgba(59, 130, 246, 0.12); color: var(--text-color); }
+    .file-type.image { background: rgba(168, 85, 247, 0.12); color: var(--image-color); }
+    .file-type.word { background: rgba(59, 130, 246, 0.12); color: var(--word-color); }
+    .file-type.excel { background: rgba(34, 197, 94, 0.12); color: var(--excel-color); }
+    .file-type.text { background: rgba(113, 113, 122, 0.12); color: var(--text-file-color); }
+    .file-type.markdown { background: rgba(113, 113, 122, 0.12); color: var(--text-muted); }
+    .file-type.html { background: rgba(249, 115, 22, 0.12); color: var(--ppt-color); }
+    .file-type.powerpoint { background: rgba(249, 115, 22, 0.12); color: var(--ppt-color); }
 
     .file-index {
-      font-family: 'IBM Plex Mono', monospace;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 12px;
       color: var(--text-dim);
-      min-width: 28px;
+      min-width: 24px;
     }
 
-    .file-info {
-      flex: 1;
-      min-width: 0;
-    }
+    .file-info { flex: 1; min-width: 0; }
 
     .file-name {
       font-size: 14px;
@@ -574,7 +673,7 @@ app.get("/", (_req, res) => {
     .file-meta {
       font-size: 12px;
       color: var(--text-dim);
-      font-family: 'IBM Plex Mono', monospace;
+      font-family: 'JetBrains Mono', monospace;
     }
 
     .file-remove {
@@ -588,27 +687,19 @@ app.get("/", (_req, res) => {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
+      font-size: 16px;
       transition: all 0.15s;
     }
 
-    .file-remove:hover {
-      background: var(--error-bg);
-      color: var(--error);
-    }
+    .file-remove:hover { background: var(--error-bg); color: var(--error); }
 
     .empty-state {
       text-align: center;
       padding: 48px 20px;
       color: var(--text-dim);
-      font-size: 14px;
     }
 
-    .empty-state-icon {
-      font-size: 32px;
-      margin-bottom: 12px;
-      opacity: 0.5;
-    }
+    .empty-state-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
 
     /* Progress */
     .progress-wrap {
@@ -621,17 +712,12 @@ app.get("/", (_req, res) => {
     .progress-label {
       display: flex;
       justify-content: space-between;
-      align-items: center;
       margin-bottom: 10px;
       font-size: 13px;
     }
 
     .progress-text { color: var(--text-muted); }
-
-    .progress-percent {
-      font-family: 'IBM Plex Mono', monospace;
-      color: var(--accent);
-    }
+    .progress-percent { font-family: 'JetBrains Mono', monospace; color: var(--accent); }
 
     .progress-bar {
       height: 8px;
@@ -654,26 +740,22 @@ app.get("/", (_req, res) => {
       width: 100%;
       padding: 18px 24px;
       border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent) 0%, #22c55e 100%);
-      color: var(--bg-deep);
-      font-family: 'Source Sans 3', sans-serif;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent) 0%, #ea580c 100%);
+      color: white;
+      font-family: 'Inter', sans-serif;
       font-size: 16px;
       font-weight: 700;
       cursor: pointer;
-      transition: all 0.25s ease;
-      box-shadow: 0 4px 24px rgba(74, 222, 128, 0.3);
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 24px rgba(249, 115, 22, 0.3);
       text-transform: uppercase;
       letter-spacing: 1px;
     }
 
     .merge-btn:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow: 0 8px 32px rgba(74, 222, 128, 0.4);
-    }
-
-    .merge-btn:active:not(:disabled) {
-      transform: translateY(0);
+      box-shadow: 0 8px 32px rgba(249, 115, 22, 0.4);
     }
 
     .merge-btn:disabled {
@@ -682,10 +764,10 @@ app.get("/", (_req, res) => {
       box-shadow: none;
     }
 
-    /* Status Messages */
+    /* Status */
     .status {
       padding: 14px 18px;
-      border-radius: 10px;
+      border-radius: 12px;
       font-size: 14px;
       margin-top: 16px;
       display: none;
@@ -696,14 +778,14 @@ app.get("/", (_req, res) => {
     .status.visible { display: flex; }
 
     .status.success {
-      background: rgba(74, 222, 128, 0.1);
-      border: 1px solid rgba(74, 222, 128, 0.2);
-      color: var(--accent);
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      color: var(--success);
     }
 
     .status.error {
       background: var(--error-bg);
-      border: 1px solid rgba(248, 113, 113, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.2);
       color: var(--error);
     }
 
@@ -711,12 +793,12 @@ app.get("/", (_req, res) => {
     .guide {
       background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: 20px;
       overflow: hidden;
     }
 
     .guide-header {
-      padding: 18px 24px;
+      padding: 20px 24px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -731,18 +813,17 @@ app.get("/", (_req, res) => {
       align-items: center;
       gap: 12px;
       font-weight: 600;
-      font-size: 15px;
     }
 
-    .guide-title-icon {
-      width: 32px;
-      height: 32px;
+    .guide-icon {
+      width: 36px;
+      height: 36px;
       background: var(--accent-glow);
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 18px;
     }
 
     .guide-chevron {
@@ -760,32 +841,22 @@ app.get("/", (_req, res) => {
       transition: max-height 0.3s ease;
     }
 
-    .guide.open .guide-content { max-height: 800px; }
+    .guide.open .guide-content { max-height: 1000px; }
 
     .guide-inner {
       padding: 0 24px 24px;
       border-top: 1px solid var(--border);
     }
 
-    .guide-section {
-      margin-top: 20px;
-    }
+    .guide-section { margin-top: 24px; }
 
     .guide-section h3 {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--accent);
-      margin: 0 0 10px;
+      margin: 0 0 12px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
-
-    .guide-section p,
-    .guide-section li {
-      font-size: 14px;
-      color: var(--text-muted);
-      margin: 0;
-      line-height: 1.7;
     }
 
     .guide-section ul {
@@ -794,23 +865,39 @@ app.get("/", (_req, res) => {
     }
 
     .guide-section li {
+      font-size: 14px;
+      color: var(--text-muted);
       margin-bottom: 8px;
+      line-height: 1.6;
     }
 
     .guide-section li::marker { color: var(--accent); }
 
-    .kbd {
-      display: inline-block;
-      padding: 2px 8px;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 12px;
-      color: var(--text);
+    .format-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
     }
 
-    /* Footer */
+    .format-item {
+      padding: 12px;
+      background: var(--bg-elevated);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .format-item-title {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .format-item-ext {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
     footer {
       text-align: center;
       margin-top: 40px;
@@ -820,14 +907,9 @@ app.get("/", (_req, res) => {
       font-size: 13px;
     }
 
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
+    footer a { color: var(--accent); text-decoration: none; }
     footer a:hover { text-decoration: underline; }
 
-    /* Animations */
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(12px); }
       to { opacity: 1; transform: translateY(0); }
@@ -838,120 +920,103 @@ app.get("/", (_req, res) => {
     .card:nth-child(2) { animation-delay: 0.2s; }
     .guide { animation: fadeIn 0.5s ease 0.35s backwards; }
 
-    /* Scrollbar */
-    .file-list::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .file-list::-webkit-scrollbar-track {
-      background: var(--bg-elevated);
-      border-radius: 4px;
-    }
-
-    .file-list::-webkit-scrollbar-thumb {
-      background: var(--border-active);
-      border-radius: 4px;
-    }
-
-    .file-list::-webkit-scrollbar-thumb:hover {
-      background: var(--text-dim);
-    }
+    .file-list::-webkit-scrollbar { width: 8px; }
+    .file-list::-webkit-scrollbar-track { background: var(--bg-elevated); border-radius: 4px; }
+    .file-list::-webkit-scrollbar-thumb { background: var(--border-active); border-radius: 4px; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <div class="logo">
-        <div class="logo-block"></div>
-        <div class="logo-block"></div>
-        <div class="logo-block"></div>
-      </div>
+      <div class="logo">📄</div>
       <h1>Master Merge Tool</h1>
-      <p class="tagline">Combine PDFs, images & text into one document</p>
+      <p class="tagline">Convert any document into one unified PDF</p>
     </header>
 
-    <!-- Step 1: Upload -->
     <div class="card">
       <div class="card-header">
         <span class="card-number">1</span>
         <div>
           <div class="card-title">Upload Files</div>
-          <div class="card-subtitle">Drop a folder or select individual files</div>
+          <div class="card-subtitle">Drop a folder or select files of any supported type</div>
         </div>
       </div>
 
       <div class="dropzone" id="dropzone">
-        <div class="dropzone-icon">
+        <div class="dropzone-icons">
           <span class="icon-pdf">PDF</span>
+          <span class="icon-word">DOC</span>
+          <span class="icon-excel">XLS</span>
           <span class="icon-img">IMG</span>
-          <span class="icon-txt">TXT</span>
+          <span class="icon-ppt">PPT</span>
         </div>
         <div class="dropzone-text">
           <strong>Drop files or folder here</strong> or click to browse
         </div>
-        <div class="dropzone-hint">Supports PDF, images (JPG, PNG, GIF, WebP), and text files</div>
+        <div class="dropzone-hint">Supports 15+ file formats including Office documents</div>
         <input type="file" id="fileInput" multiple webkitdirectory />
       </div>
 
       <div class="formats">
         <span class="format-tag pdf">.pdf</span>
+        <span class="format-tag word">.docx</span>
+        <span class="format-tag word">.doc</span>
+        <span class="format-tag excel">.xlsx</span>
+        <span class="format-tag excel">.xls</span>
+        <span class="format-tag excel">.csv</span>
+        <span class="format-tag ppt">.pptx</span>
         <span class="format-tag image">.jpg</span>
         <span class="format-tag image">.png</span>
         <span class="format-tag image">.gif</span>
         <span class="format-tag image">.webp</span>
         <span class="format-tag text">.txt</span>
+        <span class="format-tag text">.md</span>
+        <span class="format-tag text">.html</span>
       </div>
 
       <div class="stats" id="stats" style="display:none;">
-        <div class="stat">
-          <span class="stat-icon pdf"></span>
-          <span>PDFs:</span>
-          <span class="stat-value" id="pdfCount">0</span>
-        </div>
-        <div class="stat">
-          <span class="stat-icon image"></span>
-          <span>Images:</span>
-          <span class="stat-value" id="imageCount">0</span>
-        </div>
-        <div class="stat">
-          <span class="stat-icon text"></span>
-          <span>Text:</span>
-          <span class="stat-value" id="textCount">0</span>
-        </div>
-        <div class="stat">
-          <span class="stat-icon total"></span>
-          <span>Total:</span>
-          <span class="stat-value" id="totalSize">0 KB</span>
-        </div>
+        <div class="stat"><span class="stat-dot pdf"></span>PDFs: <span class="stat-value" id="pdfCount">0</span></div>
+        <div class="stat"><span class="stat-dot word"></span>Docs: <span class="stat-value" id="wordCount">0</span></div>
+        <div class="stat"><span class="stat-dot excel"></span>Sheets: <span class="stat-value" id="excelCount">0</span></div>
+        <div class="stat"><span class="stat-dot image"></span>Images: <span class="stat-value" id="imageCount">0</span></div>
+        <div class="stat"><span class="stat-dot text"></span>Text: <span class="stat-value" id="textCount">0</span></div>
+        <div class="stat"><span class="stat-dot total"></span>Size: <span class="stat-value" id="totalSize">0 KB</span></div>
       </div>
     </div>
 
-    <!-- Step 2: Configure & Merge -->
     <div class="card">
       <div class="card-header">
         <span class="card-number">2</span>
         <div>
-          <div class="card-title">Review & Merge</div>
-          <div class="card-subtitle">Drag to reorder, then create your PDF</div>
+          <div class="card-title">Configure & Merge</div>
+          <div class="card-subtitle">Drag to reorder, set quality, then create your PDF</div>
         </div>
       </div>
 
       <div class="options">
         <div class="option-group">
-          <label class="option-label">Compression Level</label>
+          <label>Compression Level</label>
           <select class="option-select" id="qualitySelect">
             <option value="high">High Quality (larger file)</option>
-            <option value="medium" selected>Medium Quality (balanced)</option>
+            <option value="medium" selected>Medium (balanced)</option>
             <option value="low">Low Quality (smallest file)</option>
           </select>
-          <div class="quality-hint" id="qualityHint">Balanced file size and quality</div>
+        </div>
+        <div class="option-group">
+          <label>Output Filename</label>
+          <select class="option-select" id="filenameSelect">
+            <option value="merged">merged.pdf</option>
+            <option value="combined">combined.pdf</option>
+            <option value="master">master.pdf</option>
+            <option value="output">output.pdf</option>
+          </select>
         </div>
       </div>
 
       <ul class="file-list" id="fileList">
         <li class="empty-state">
           <div class="empty-state-icon">📁</div>
-          <div>No files selected. Upload files above to get started.</div>
+          <div>No files yet. Upload documents above to begin.</div>
         </li>
       </ul>
 
@@ -967,62 +1032,64 @@ app.get("/", (_req, res) => {
 
       <div class="status" id="status"></div>
 
-      <button class="merge-btn" id="mergeBtn" disabled>
-        Create Master PDF
-      </button>
+      <button class="merge-btn" id="mergeBtn" disabled>Create Master PDF</button>
     </div>
 
-    <!-- Guide -->
     <div class="guide" id="guide">
       <div class="guide-header" onclick="toggleGuide()">
         <div class="guide-title">
-          <span class="guide-title-icon">?</span>
+          <span class="guide-icon">?</span>
           How to Use
         </div>
-        <svg class="guide-chevron" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
+        <svg class="guide-chevron" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="guide-content">
         <div class="guide-inner">
           <div class="guide-section">
-            <h3>Supported File Types</h3>
+            <h3>Supported Formats</h3>
+            <div class="format-grid">
+              <div class="format-item">
+                <div class="format-item-title">📄 PDF</div>
+                <div class="format-item-ext">.pdf</div>
+              </div>
+              <div class="format-item">
+                <div class="format-item-title">📝 Word</div>
+                <div class="format-item-ext">.docx, .doc</div>
+              </div>
+              <div class="format-item">
+                <div class="format-item-title">📊 Excel</div>
+                <div class="format-item-ext">.xlsx, .xls, .csv</div>
+              </div>
+              <div class="format-item">
+                <div class="format-item-title">📽️ PowerPoint</div>
+                <div class="format-item-ext">.pptx, .ppt</div>
+              </div>
+              <div class="format-item">
+                <div class="format-item-title">🖼️ Images</div>
+                <div class="format-item-ext">.jpg, .png, .gif, .webp</div>
+              </div>
+              <div class="format-item">
+                <div class="format-item-title">📃 Text</div>
+                <div class="format-item-ext">.txt, .md, .html</div>
+              </div>
+            </div>
+          </div>
+          <div class="guide-section">
+            <h3>Steps</h3>
             <ul>
-              <li><strong>PDF files</strong> — merged directly into the output</li>
-              <li><strong>Images</strong> (JPG, PNG, GIF, WebP, BMP, TIFF) — converted to PDF pages</li>
-              <li><strong>Text files</strong> (.txt) — rendered with monospace font, auto-paginated</li>
+              <li><strong>Upload:</strong> Drag files/folders onto the drop zone or click to browse</li>
+              <li><strong>Reorder:</strong> Drag items by the handle (≡) to change merge order</li>
+              <li><strong>Configure:</strong> Choose compression level and output filename</li>
+              <li><strong>Merge:</strong> Click the button and download your combined PDF</li>
             </ul>
           </div>
           <div class="guide-section">
-            <h3>Uploading</h3>
+            <h3>Tips</h3>
             <ul>
-              <li><strong>Drag & drop</strong> files or an entire folder onto the upload area</li>
-              <li><strong>Click to browse</strong> and select from your computer</li>
-              <li><strong>Folder upload:</strong> Supported in Chrome/Edge — all compatible files are extracted</li>
-            </ul>
-          </div>
-          <div class="guide-section">
-            <h3>Reordering</h3>
-            <ul>
-              <li>Drag files by the handle (≡) to change their position</li>
-              <li>Files are merged top-to-bottom in the order shown</li>
-              <li>Click <span class="kbd">✕</span> to remove a file from the list</li>
-            </ul>
-          </div>
-          <div class="guide-section">
-            <h3>Compression Options</h3>
-            <ul>
-              <li><strong>High Quality:</strong> Best for printing, larger file size</li>
-              <li><strong>Medium:</strong> Good balance for sharing and viewing</li>
-              <li><strong>Low Quality:</strong> Smallest size, good for email/web</li>
-            </ul>
-          </div>
-          <div class="guide-section">
-            <h3>Troubleshooting</h3>
-            <ul>
-              <li><strong>Encrypted PDFs:</strong> Remove password protection before merging</li>
-              <li><strong>Large files:</strong> Files up to 250MB each are supported</li>
-              <li><strong>Slow processing:</strong> Large images take longer to compress</li>
+              <li>Use <strong>High Quality</strong> for documents you'll print</li>
+              <li>Use <strong>Low Quality</strong> for email attachments to reduce size</li>
+              <li>Excel sheets render as formatted tables with headers</li>
+              <li>Images are automatically scaled to fit standard pages</li>
             </ul>
           </div>
         </div>
@@ -1030,8 +1097,8 @@ app.get("/", (_req, res) => {
     </div>
 
     <footer>
-      Files are processed server-side and not stored.
-      <br>Built with <a href="https://pdf-lib.js.org/" target="_blank">pdf-lib</a> and <a href="https://sharp.pixelplumbing.com/" target="_blank">sharp</a>.
+      Files processed server-side, never stored. 
+      Built with <a href="https://pdf-lib.js.org/" target="_blank">pdf-lib</a>.
     </footer>
   </div>
 
@@ -1040,103 +1107,86 @@ app.get("/", (_req, res) => {
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('fileInput');
   const stats = document.getElementById('stats');
-  const pdfCountEl = document.getElementById('pdfCount');
-  const imageCountEl = document.getElementById('imageCount');
-  const textCountEl = document.getElementById('textCount');
-  const totalSizeEl = document.getElementById('totalSize');
   const fileList = document.getElementById('fileList');
   const mergeBtn = document.getElementById('mergeBtn');
   const qualitySelect = document.getElementById('qualitySelect');
-  const qualityHint = document.getElementById('qualityHint');
+  const filenameSelect = document.getElementById('filenameSelect');
   const progress = document.getElementById('progress');
   const progressText = document.getElementById('progressText');
   const progressPercent = document.getElementById('progressPercent');
   const progressFill = document.getElementById('progressFill');
   const statusEl = document.getElementById('status');
-  const guide = document.getElementById('guide');
 
   const SUPPORTED = {
     pdf: ['.pdf'],
     image: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif'],
+    word: ['.docx', '.doc'],
+    excel: ['.xlsx', '.xls', '.csv'],
     text: ['.txt'],
+    markdown: ['.md', '.markdown'],
+    html: ['.html', '.htm'],
+    powerpoint: ['.pptx', '.ppt'],
   };
 
   let files = [];
   let draggedItem = null;
 
-  const qualityHints = {
-    high: 'Best quality, largest file size',
-    medium: 'Balanced file size and quality',
-    low: 'Smallest file, reduced quality',
-  };
-
-  // Utils
-  function formatBytes(bytes) {
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0, n = bytes;
-    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-    return (i === 0 ? n.toFixed(0) : n.toFixed(1)) + ' ' + units[i];
+  function formatBytes(b) {
+    const u = ['B','KB','MB','GB'];
+    let i = 0;
+    while (b >= 1024 && i < u.length-1) { b /= 1024; i++; }
+    return (i === 0 ? b.toFixed(0) : b.toFixed(1)) + ' ' + u[i];
   }
 
-  function getFileExt(name) {
+  function getExt(name) {
     return (name || '').toLowerCase().match(/\\.[^.]+$/)?.[0] || '';
   }
 
   function getFileType(name) {
-    const ext = getFileExt(name);
-    if (SUPPORTED.pdf.includes(ext)) return 'pdf';
-    if (SUPPORTED.image.includes(ext)) return 'image';
-    if (SUPPORTED.text.includes(ext)) return 'text';
+    const ext = getExt(name);
+    for (const [type, exts] of Object.entries(SUPPORTED)) {
+      if (exts.includes(ext)) return type;
+    }
     return null;
   }
 
-  function isSupported(file) {
-    return getFileType(file.name) !== null;
-  }
-
-  function getFileName(file) {
-    return file.webkitRelativePath || file.name || 'unnamed';
-  }
+  function isSupported(f) { return getFileType(f.name) !== null; }
+  function getFileName(f) { return f.webkitRelativePath || f.name || 'unnamed'; }
 
   function naturalSort(a, b) {
     const rx = /(\\d+)|(\\D+)/g;
     const ax = String(a).match(rx) || [];
     const bx = String(b).match(rx) || [];
     while (ax.length && bx.length) {
-      const a1 = ax.shift();
-      const b1 = bx.shift();
-      const an = parseInt(a1, 10);
-      const bn = parseInt(b1, 10);
+      const a1 = ax.shift(), b1 = bx.shift();
+      const an = parseInt(a1), bn = parseInt(b1);
       if (!isNaN(an) && !isNaN(bn) && an !== bn) return an - bn;
-      const cmp = String(a1).localeCompare(String(b1));
-      if (cmp) return cmp;
+      const c = String(a1).localeCompare(String(b1));
+      if (c) return c;
     }
     return ax.length - bx.length;
   }
 
-  function getTypeIcon(type) {
-    switch(type) {
-      case 'pdf': return 'PDF';
-      case 'image': return 'IMG';
-      case 'text': return 'TXT';
-      default: return '?';
-    }
+  function getTypeLabel(type) {
+    const labels = { pdf:'PDF', image:'IMG', word:'DOC', excel:'XLS', text:'TXT', markdown:'MD', html:'HTM', powerpoint:'PPT' };
+    return labels[type] || '?';
   }
 
-  // UI Updates
   function updateStats() {
-    const counts = { pdf: 0, image: 0, text: 0 };
+    const counts = { pdf:0, image:0, word:0, excel:0, text:0, markdown:0, html:0, powerpoint:0 };
     let total = 0;
     files.forEach(f => {
-      const type = getFileType(f.name);
-      if (type) counts[type]++;
+      const t = getFileType(f.name);
+      if (t) counts[t]++;
       total += f.size || 0;
     });
 
-    pdfCountEl.textContent = counts.pdf;
-    imageCountEl.textContent = counts.image;
-    textCountEl.textContent = counts.text;
-    totalSizeEl.textContent = formatBytes(total);
+    document.getElementById('pdfCount').textContent = counts.pdf;
+    document.getElementById('wordCount').textContent = counts.word;
+    document.getElementById('excelCount').textContent = counts.excel;
+    document.getElementById('imageCount').textContent = counts.image;
+    document.getElementById('textCount').textContent = counts.text + counts.markdown + counts.html + counts.powerpoint;
+    document.getElementById('totalSize').textContent = formatBytes(total);
     
     stats.style.display = files.length > 0 ? 'flex' : 'none';
     mergeBtn.disabled = files.length === 0;
@@ -1144,13 +1194,8 @@ app.get("/", (_req, res) => {
 
   function renderFileList() {
     fileList.innerHTML = '';
-    
     if (files.length === 0) {
-      fileList.innerHTML = \`
-        <li class="empty-state">
-          <div class="empty-state-icon">📁</div>
-          <div>No files selected. Upload files above to get started.</div>
-        </li>\`;
+      fileList.innerHTML = '<li class="empty-state"><div class="empty-state-icon">📁</div><div>No files yet. Upload documents above to begin.</div></li>';
       return;
     }
 
@@ -1163,7 +1208,7 @@ app.get("/", (_req, res) => {
 
       li.innerHTML = \`
         <div class="drag-handle"><span></span><span></span><span></span></div>
-        <div class="file-type \${type}">\${getTypeIcon(type)}</div>
+        <div class="file-type \${type}">\${getTypeLabel(type)}</div>
         <span class="file-index">\${String(index + 1).padStart(2, '0')}</span>
         <div class="file-info">
           <div class="file-name">\${getFileName(file)}</div>
@@ -1172,68 +1217,36 @@ app.get("/", (_req, res) => {
         <button class="file-remove" title="Remove">✕</button>
       \`;
 
-      li.querySelector('.file-remove').addEventListener('click', (e) => {
+      li.querySelector('.file-remove').onclick = (e) => {
         e.stopPropagation();
         files.splice(index, 1);
         renderFileList();
         updateStats();
-      });
+      };
 
-      li.addEventListener('dragstart', handleDragStart);
-      li.addEventListener('dragend', handleDragEnd);
-      li.addEventListener('dragover', handleDragOver);
-      li.addEventListener('drop', handleDrop);
-      li.addEventListener('dragleave', handleDragLeave);
+      li.addEventListener('dragstart', function(e) { draggedItem = this; this.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+      li.addEventListener('dragend', function() { this.classList.remove('dragging'); document.querySelectorAll('.file-item').forEach(i => i.classList.remove('drag-over-item')); draggedItem = null; });
+      li.addEventListener('dragover', function(e) { e.preventDefault(); if (this !== draggedItem) this.classList.add('drag-over-item'); });
+      li.addEventListener('dragleave', function() { this.classList.remove('drag-over-item'); });
+      li.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over-item');
+        if (draggedItem && this !== draggedItem) {
+          const from = parseInt(draggedItem.dataset.index);
+          const to = parseInt(this.dataset.index);
+          const [moved] = files.splice(from, 1);
+          files.splice(to, 0, moved);
+          renderFileList();
+        }
+      });
 
       fileList.appendChild(li);
     });
   }
 
-  // Drag reorder handlers
-  function handleDragStart(e) {
-    draggedItem = this;
-    this.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-  }
-
-  function handleDragEnd() {
-    this.classList.remove('dragging');
-    document.querySelectorAll('.file-item').forEach(item => {
-      item.classList.remove('drag-over-item');
-    });
-    draggedItem = null;
-  }
-
-  function handleDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (this !== draggedItem) {
-      this.classList.add('drag-over-item');
-    }
-  }
-
-  function handleDragLeave() {
-    this.classList.remove('drag-over-item');
-  }
-
-  function handleDrop(e) {
-    e.preventDefault();
-    this.classList.remove('drag-over-item');
-    
-    if (draggedItem && this !== draggedItem) {
-      const fromIndex = parseInt(draggedItem.dataset.index);
-      const toIndex = parseInt(this.dataset.index);
-      const [moved] = files.splice(fromIndex, 1);
-      files.splice(toIndex, 0, moved);
-      renderFileList();
-    }
-  }
-
-  // File Drop Zone
   function handleFileDrop(e) {
     e.preventDefault();
     dropzone.classList.remove('drag-over');
-
     const items = e.dataTransfer.items;
     if (items) {
       const entries = [];
@@ -1250,111 +1263,79 @@ app.get("/", (_req, res) => {
   }
 
   async function processEntries(entries) {
-    const allFiles = [];
-    
-    async function readEntry(entry, path = '') {
+    const all = [];
+    async function read(entry, path = '') {
       if (entry.isFile) {
-        return new Promise((resolve) => {
-          entry.file(file => {
-            Object.defineProperty(file, 'webkitRelativePath', {
-              value: path + file.name,
-              writable: false
-            });
-            resolve(file);
-          });
-        });
+        return new Promise(r => entry.file(f => {
+          Object.defineProperty(f, 'webkitRelativePath', { value: path + f.name });
+          r(f);
+        }));
       } else if (entry.isDirectory) {
-        const dirReader = entry.createReader();
-        const entries = await new Promise(r => dirReader.readEntries(r));
-        const subFiles = [];
-        for (const subEntry of entries) {
-          const result = await readEntry(subEntry, path + entry.name + '/');
-          if (Array.isArray(result)) subFiles.push(...result);
-          else if (result) subFiles.push(result);
+        const reader = entry.createReader();
+        const subs = await new Promise(r => reader.readEntries(r));
+        const results = [];
+        for (const sub of subs) {
+          const res = await read(sub, path + entry.name + '/');
+          if (Array.isArray(res)) results.push(...res);
+          else if (res) results.push(res);
         }
-        return subFiles;
+        return results;
       }
     }
-
     for (const entry of entries) {
-      const result = await readEntry(entry);
-      if (Array.isArray(result)) allFiles.push(...result);
-      else if (result) allFiles.push(result);
+      const res = await read(entry);
+      if (Array.isArray(res)) all.push(...res);
+      else if (res) all.push(res);
     }
-
-    return allFiles;
+    return all;
   }
 
   function addFiles(newFiles) {
     const supported = newFiles.filter(isSupported);
     supported.sort((a, b) => naturalSort(getFileName(a).toLowerCase(), getFileName(b).toLowerCase()));
-
-    supported.forEach(file => {
-      const exists = files.some(f => getFileName(f) === getFileName(file) && f.size === file.size);
-      if (!exists) files.push(file);
+    supported.forEach(f => {
+      if (!files.some(x => getFileName(x) === getFileName(f) && x.size === f.size)) {
+        files.push(f);
+      }
     });
-
     renderFileList();
     updateStats();
     hideStatus();
   }
 
-  // Progress & Status
-  function showProgress(text, percent) {
+  function showProgress(text, pct) {
     progress.classList.add('visible');
     progressText.textContent = text;
-    progressPercent.textContent = percent + '%';
-    progressFill.style.width = percent + '%';
+    progressPercent.textContent = pct + '%';
+    progressFill.style.width = pct + '%';
   }
 
-  function hideProgress() {
-    progress.classList.remove('visible');
+  function hideProgress() { progress.classList.remove('visible'); }
+
+  function showStatus(msg, err = false) {
+    statusEl.className = 'status visible ' + (err ? 'error' : 'success');
+    statusEl.innerHTML = (err ? '⚠ ' : '✓ ') + msg;
   }
 
-  function showStatus(message, isError = false) {
-    statusEl.className = 'status visible ' + (isError ? 'error' : 'success');
-    statusEl.innerHTML = (isError ? '⚠ ' : '✓ ') + message;
-  }
+  function hideStatus() { statusEl.className = 'status'; }
 
-  function hideStatus() {
-    statusEl.className = 'status';
-  }
-
-  // Quality hint
-  qualitySelect.addEventListener('change', () => {
-    qualityHint.textContent = qualityHints[qualitySelect.value];
-  });
-
-  // Merge
   async function handleMerge() {
     if (files.length === 0) return;
-
     mergeBtn.disabled = true;
     hideStatus();
-    showProgress('Preparing files...', 0);
+    showProgress('Preparing...', 0);
 
     try {
       const fd = new FormData();
-      files.forEach((f) => {
-        fd.append('files', f, getFileName(f));
-      });
+      files.forEach(f => fd.append('files', f, getFileName(f)));
       fd.append('quality', qualitySelect.value);
 
       const xhr = new XMLHttpRequest();
-      
-      const uploadPromise = new Promise((resolve, reject) => {
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const pct = Math.round((e.loaded / e.total) * 60);
-            showProgress('Uploading...', pct);
-          }
+      const promise = new Promise((resolve, reject) => {
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) showProgress('Uploading...', Math.round((e.loaded / e.total) * 50));
         };
-
-        xhr.onload = () => {
-          if (xhr.status === 200) resolve(xhr.response);
-          else reject(new Error(xhr.responseText || 'Merge failed'));
-        };
-
+        xhr.onload = () => xhr.status === 200 ? resolve(xhr.response) : reject(new Error(xhr.responseText || 'Failed'));
         xhr.onerror = () => reject(new Error('Network error'));
       });
 
@@ -1362,58 +1343,37 @@ app.get("/", (_req, res) => {
       xhr.responseType = 'blob';
       xhr.send(fd);
 
-      showProgress('Converting & merging...', 65);
-
-      const blob = await uploadPromise;
-
+      showProgress('Converting documents...', 55);
+      const blob = await promise;
       showProgress('Complete!', 100);
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'merged.pdf';
+      a.download = filenameSelect.value + '.pdf';
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
 
-      showStatus('PDF created successfully! Download started.');
+      showStatus('PDF created! Download started.');
       setTimeout(hideProgress, 1500);
-
     } catch (err) {
       hideProgress();
-      showStatus(err.message || 'Failed to create PDF. Check file formats.', true);
+      showStatus(err.message || 'Failed to create PDF.', true);
     } finally {
       mergeBtn.disabled = false;
     }
   }
 
-  // Guide toggle
-  window.toggleGuide = function() {
-    guide.classList.toggle('open');
-  };
+  window.toggleGuide = () => document.getElementById('guide').classList.toggle('open');
 
-  // Event Listeners
-  dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.classList.add('drag-over');
-  });
-
-  dropzone.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('drag-over');
-  });
-
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.classList.remove('drag-over'); });
   dropzone.addEventListener('drop', handleFileDrop);
-
-  fileInput.addEventListener('change', () => {
-    addFiles(Array.from(fileInput.files || []));
-    fileInput.value = '';
-  });
-
+  fileInput.addEventListener('change', () => { addFiles(Array.from(fileInput.files || [])); fileInput.value = ''; });
   mergeBtn.addEventListener('click', handleMerge);
 
-  // Init
   updateStats();
 })();
 </script>
@@ -1436,81 +1396,70 @@ app.post("/merge", upload.array("files"), async (req, res) => {
       const filename = f.originalname || '';
       const type = getFileType(filename);
 
-      if (type === 'pdf') {
-        // Merge PDF directly
-        try {
+      try {
+        if (type === 'pdf') {
           const doc = await PDFDocument.load(f.buffer, { ignoreEncryption: false });
           const pages = await merged.copyPages(doc, doc.getPageIndices());
-          pages.forEach((p) => merged.addPage(p));
-        } catch (err) {
-          console.error(`Failed to process PDF ${filename}:`, err.message);
-          throw new Error(`Failed to process ${filename}: ${err.message}`);
-        }
-      } else if (type === 'image') {
-        // Convert image to PDF page
-        try {
+          pages.forEach(p => merged.addPage(p));
+
+        } else if (type === 'image') {
           const processed = await imageToPdfPage(f.buffer, quality);
           const img = await merged.embedJpg(processed.buffer);
-          
-          // Create page with image dimensions (max 8.5x11 inches at 72dpi)
-          const maxWidth = 612;
-          const maxHeight = 792;
-          let width = processed.width;
-          let height = processed.height;
-          
-          // Scale to fit page
-          const scale = Math.min(maxWidth / width, maxHeight / height, 1);
-          width *= scale;
-          height *= scale;
+          const scale = Math.min(612 / processed.width, 792 / processed.height, 1);
+          const w = processed.width * scale;
+          const h = processed.height * scale;
+          const page = merged.addPage([Math.max(w, 100), Math.max(h, 100)]);
+          page.drawImage(img, { x: 0, y: 0, width: w, height: h });
 
-          const page = merged.addPage([Math.max(width, 100), Math.max(height, 100)]);
-          page.drawImage(img, {
-            x: 0,
-            y: 0,
-            width: width,
-            height: height,
-          });
-        } catch (err) {
-          console.error(`Failed to process image ${filename}:`, err.message);
-          throw new Error(`Failed to process ${filename}: ${err.message}`);
-        }
-      } else if (type === 'text') {
-        // Convert text to PDF pages
-        try {
+        } else if (type === 'word') {
+          const text = await wordToText(f.buffer);
+          await textToPdfPages(text, merged, filename);
+
+        } else if (type === 'excel') {
+          const text = excelToText(f.buffer, filename);
+          await textToPdfPages(text, merged, filename);
+
+        } else if (type === 'text') {
           const text = f.buffer.toString('utf-8');
-          await textToPdfPages(text, merged);
-        } catch (err) {
-          console.error(`Failed to process text ${filename}:`, err.message);
-          throw new Error(`Failed to process ${filename}: ${err.message}`);
+          await textToPdfPages(text, merged, filename);
+
+        } else if (type === 'markdown') {
+          const text = markdownToText(f.buffer);
+          await textToPdfPages(text, merged, filename);
+
+        } else if (type === 'html') {
+          const text = htmlToText(f.buffer);
+          await textToPdfPages(text, merged, filename);
+
+        } else if (type === 'powerpoint') {
+          const text = pptxToText(f.buffer);
+          await textToPdfPages(text, merged, filename);
         }
+      } catch (err) {
+        console.error(`Error processing ${filename}:`, err.message);
+        // Add error page
+        const errorText = `Error processing file: ${filename}\n\n${err.message}`;
+        await textToPdfPages(errorText, merged, 'Error');
       }
     }
 
     const mergedBytes = await merged.save();
-
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", 'attachment; filename="merged.pdf"');
     return res.status(200).send(Buffer.from(mergedBytes));
 
   } catch (err) {
     const msg = String(err?.message || "Merge failed.");
-
     if (msg.toLowerCase().includes("encrypted") || msg.toLowerCase().includes("password")) {
-      return res.status(500).type("text/plain")
-        .send("One or more PDFs are encrypted. Remove password protection and try again.");
+      return res.status(500).type("text/plain").send("One or more PDFs are encrypted. Remove password protection and try again.");
     }
-
     return res.status(500).type("text/plain").send(msg);
   }
 });
 
-// For local development
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Master Merge Tool running at http://localhost:${PORT}`);
-  });
+  app.listen(PORT, () => console.log(`Master Merge Tool running at http://localhost:${PORT}`));
 }
 
-// Export for Vercel
 module.exports = app;

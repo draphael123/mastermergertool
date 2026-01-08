@@ -1,18 +1,22 @@
 {
   "name": "mastermergertool",
-  "version": "2.0.0",
-  "description": "Convert and merge multiple file types into one compressed PDF",
+  "version": "3.0.0",
+  "description": "Convert and merge any document type into one compressed PDF",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
     "dev": "node app.js"
   },
   "dependencies": {
+    "csv-parse": "^5.5.3",
     "express": "^4.18.2",
+    "mammoth": "^1.6.0",
+    "marked": "^11.1.1",
     "multer": "^1.4.5-lts.1",
     "pdf-lib": "^1.17.1",
-    "sharp": "^0.33.2"
+    "sharp": "^0.33.2",
+    "xlsx": "^0.18.5"
   },
-  "keywords": ["pdf", "merge", "compress", "convert", "document"],
+  "keywords": ["pdf", "merge", "compress", "convert", "document", "word", "excel"],
   "license": "MIT"
 }
