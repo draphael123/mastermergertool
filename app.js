@@ -284,126 +284,304 @@ app.get("/", (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Master Merge Tool</title>
+  <title>Master Merge Tool — Combine Any Document into PDF</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-deep: #09090b;
-      --bg-surface: #111113;
-      --bg-elevated: #18181b;
-      --bg-hover: #1f1f23;
-      --border: #27272a;
-      --border-active: #3f3f46;
-      --text: #fafafa;
-      --text-muted: #a1a1aa;
-      --text-dim: #71717a;
-      --accent: #f97316;
-      --accent-hover: #fb923c;
-      --accent-dim: #7c2d12;
-      --accent-glow: rgba(249, 115, 22, 0.1);
-      --success: #22c55e;
-      --error: #ef4444;
-      --error-bg: rgba(239, 68, 68, 0.1);
-      --pdf-color: #ef4444;
-      --image-color: #a855f7;
-      --word-color: #3b82f6;
-      --excel-color: #22c55e;
-      --text-file-color: #71717a;
-      --ppt-color: #f97316;
+      --bg: #0f0f11;
+      --surface: #16161a;
+      --elevated: #1c1c21;
+      --border: #2a2a32;
+      --text: #fffffe;
+      --text-muted: #94a1b2;
+      --text-dim: #72757e;
+      
+      /* Vibrant color palette */
+      --pink: #ff6b9d;
+      --pink-glow: rgba(255, 107, 157, 0.15);
+      --purple: #c77dff;
+      --purple-glow: rgba(199, 125, 255, 0.15);
+      --blue: #48bfe3;
+      --blue-glow: rgba(72, 191, 227, 0.15);
+      --cyan: #64dfdf;
+      --cyan-glow: rgba(100, 223, 223, 0.15);
+      --green: #72efdd;
+      --green-glow: rgba(114, 239, 221, 0.15);
+      --yellow: #ffd166;
+      --yellow-glow: rgba(255, 209, 102, 0.15);
+      --orange: #ff9f1c;
+      --orange-glow: rgba(255, 159, 28, 0.15);
+      --red: #ef476f;
+      --red-glow: rgba(239, 71, 111, 0.15);
+      
+      /* Gradients */
+      --gradient-primary: linear-gradient(135deg, var(--pink), var(--purple), var(--blue));
+      --gradient-warm: linear-gradient(135deg, var(--orange), var(--pink));
+      --gradient-cool: linear-gradient(135deg, var(--cyan), var(--purple));
+      --gradient-success: linear-gradient(135deg, var(--green), var(--cyan));
     }
 
     * { box-sizing: border-box; }
-    html { background: var(--bg-deep); }
+    
+    html { background: var(--bg); }
     
     body {
       margin: 0;
       min-height: 100vh;
       background: 
-        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(249, 115, 22, 0.08), transparent),
-        radial-gradient(ellipse 50% 50% at 100% 50%, rgba(168, 85, 247, 0.04), transparent),
-        var(--bg-deep);
+        radial-gradient(ellipse 80% 60% at 10% 0%, rgba(255, 107, 157, 0.12), transparent 50%),
+        radial-gradient(ellipse 60% 50% at 90% 10%, rgba(199, 125, 255, 0.1), transparent 50%),
+        radial-gradient(ellipse 70% 50% at 50% 100%, rgba(72, 191, 227, 0.08), transparent 50%),
+        var(--bg);
       color: var(--text);
-      font-family: 'Inter', -apple-system, sans-serif;
+      font-family: 'Outfit', sans-serif;
       font-size: 15px;
       line-height: 1.6;
     }
 
     .container {
-      max-width: 920px;
+      max-width: 1000px;
       margin: 0 auto;
-      padding: 48px 24px 80px;
+      padding: 40px 24px 80px;
     }
 
-    header {
+    /* Hero Section */
+    .hero {
       text-align: center;
-      margin-bottom: 40px;
+      padding: 60px 0 50px;
+      position: relative;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(199, 125, 255, 0.15), transparent 70%);
+      pointer-events: none;
+      z-index: -1;
     }
 
     .logo {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 72px;
-      height: 72px;
-      background: linear-gradient(135deg, var(--accent) 0%, #ea580c 100%);
-      border-radius: 20px;
-      margin-bottom: 24px;
-      box-shadow: 0 8px 40px rgba(249, 115, 22, 0.3);
-      font-size: 32px;
+      width: 90px;
+      height: 90px;
+      background: var(--gradient-primary);
+      border-radius: 28px;
+      margin-bottom: 28px;
+      font-size: 42px;
+      box-shadow: 
+        0 10px 50px rgba(255, 107, 157, 0.3),
+        0 4px 20px rgba(199, 125, 255, 0.2);
+      animation: float 4s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
     }
 
     h1 {
-      font-family: 'Fraunces', serif;
-      font-size: 52px;
-      font-weight: 700;
-      margin: 0 0 8px;
+      font-size: 56px;
+      font-weight: 900;
+      margin: 0 0 16px;
       letter-spacing: -2px;
-      background: linear-gradient(135deg, var(--text) 30%, var(--accent) 100%);
+      background: var(--gradient-primary);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+      line-height: 1.1;
     }
 
     .tagline {
+      font-size: 20px;
       color: var(--text-muted);
-      font-size: 17px;
+      margin: 0 0 12px;
+      font-weight: 500;
     }
 
-    .card {
-      background: var(--bg-surface);
+    .tagline-highlight {
+      background: var(--gradient-warm);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 700;
+    }
+
+    /* Benefits Section */
+    .benefits {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .benefit {
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 20px;
       padding: 28px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .benefit:hover {
+      transform: translateY(-4px);
+    }
+
+    .benefit::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+    }
+
+    .benefit:nth-child(1)::before { background: var(--gradient-warm); }
+    .benefit:nth-child(2)::before { background: var(--gradient-cool); }
+    .benefit:nth-child(3)::before { background: var(--gradient-success); }
+    .benefit:nth-child(4)::before { background: linear-gradient(90deg, var(--yellow), var(--orange)); }
+
+    .benefit:nth-child(1):hover { box-shadow: 0 20px 40px rgba(255, 107, 157, 0.15); }
+    .benefit:nth-child(2):hover { box-shadow: 0 20px 40px rgba(199, 125, 255, 0.15); }
+    .benefit:nth-child(3):hover { box-shadow: 0 20px 40px rgba(114, 239, 221, 0.15); }
+    .benefit:nth-child(4):hover { box-shadow: 0 20px 40px rgba(255, 209, 102, 0.15); }
+
+    .benefit-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .benefit:nth-child(1) .benefit-icon { background: var(--pink-glow); }
+    .benefit:nth-child(2) .benefit-icon { background: var(--purple-glow); }
+    .benefit:nth-child(3) .benefit-icon { background: var(--green-glow); }
+    .benefit:nth-child(4) .benefit-icon { background: var(--yellow-glow); }
+
+    .benefit-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .benefit:nth-child(1) .benefit-title { color: var(--pink); }
+    .benefit:nth-child(2) .benefit-title { color: var(--purple); }
+    .benefit:nth-child(3) .benefit-title { color: var(--green); }
+    .benefit:nth-child(4) .benefit-title { color: var(--yellow); }
+
+    .benefit-desc {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* Format Showcase */
+    .formats-showcase {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 32px;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+
+    .formats-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-dim);
       margin-bottom: 20px;
+    }
+
+    .formats-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .format-badge {
+      padding: 10px 18px;
+      border-radius: 50px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      border: 1px solid transparent;
+      transition: transform 0.2s ease;
+    }
+
+    .format-badge:hover {
+      transform: scale(1.05);
+    }
+
+    .format-badge.pdf { background: var(--red-glow); color: var(--red); border-color: rgba(239, 71, 111, 0.3); }
+    .format-badge.word { background: var(--blue-glow); color: var(--blue); border-color: rgba(72, 191, 227, 0.3); }
+    .format-badge.excel { background: var(--green-glow); color: var(--green); border-color: rgba(114, 239, 221, 0.3); }
+    .format-badge.ppt { background: var(--orange-glow); color: var(--orange); border-color: rgba(255, 159, 28, 0.3); }
+    .format-badge.image { background: var(--purple-glow); color: var(--purple); border-color: rgba(199, 125, 255, 0.3); }
+    .format-badge.text { background: var(--cyan-glow); color: var(--cyan); border-color: rgba(100, 223, 223, 0.3); }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 32px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--gradient-primary);
     }
 
     .card-header {
       display: flex;
       align-items: flex-start;
-      gap: 16px;
-      margin-bottom: 24px;
+      gap: 18px;
+      margin-bottom: 28px;
     }
 
     .card-number {
+      width: 44px;
+      height: 44px;
+      background: var(--gradient-primary);
+      color: white;
+      font-weight: 800;
+      font-size: 18px;
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
-      height: 36px;
-      background: var(--accent);
-      color: white;
-      font-weight: 700;
-      font-size: 15px;
-      border-radius: 12px;
-      font-family: 'JetBrains Mono', monospace;
       flex-shrink: 0;
+      box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3);
     }
 
     .card-title {
-      font-weight: 600;
-      font-size: 18px;
+      font-weight: 700;
+      font-size: 20px;
       margin-bottom: 4px;
     }
 
@@ -414,54 +592,60 @@ app.get("/", (_req, res) => {
 
     /* Dropzone */
     .dropzone {
-      position: relative;
-      border: 2px dashed var(--border-active);
-      border-radius: 16px;
-      padding: 48px 24px;
+      border: 2px dashed var(--border);
+      border-radius: 20px;
+      padding: 50px 24px;
       text-align: center;
       cursor: pointer;
-      transition: all 0.2s ease;
-      background: var(--bg-elevated);
+      transition: all 0.3s ease;
+      background: var(--elevated);
+      position: relative;
     }
 
-    .dropzone:hover, .dropzone.drag-over {
-      border-color: var(--accent);
-      background: var(--accent-glow);
+    .dropzone:hover {
+      border-color: var(--purple);
+      background: var(--purple-glow);
     }
 
     .dropzone.drag-over {
+      border-color: var(--pink);
+      background: var(--pink-glow);
       transform: scale(1.01);
-      box-shadow: 0 0 60px rgba(249, 115, 22, 0.15);
+      box-shadow: 0 0 60px rgba(255, 107, 157, 0.2);
     }
 
     .dropzone-icons {
       display: flex;
       justify-content: center;
-      gap: 8px;
-      margin-bottom: 20px;
+      gap: 10px;
+      margin-bottom: 24px;
     }
 
     .dropzone-icons span {
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
       font-family: 'JetBrains Mono', monospace;
     }
 
-    .icon-pdf { background: rgba(239, 68, 68, 0.15); color: var(--pdf-color); }
-    .icon-img { background: rgba(168, 85, 247, 0.15); color: var(--image-color); }
-    .icon-word { background: rgba(59, 130, 246, 0.15); color: var(--word-color); }
-    .icon-excel { background: rgba(34, 197, 94, 0.15); color: var(--excel-color); }
-    .icon-ppt { background: rgba(249, 115, 22, 0.15); color: var(--ppt-color); }
+    .icon-pdf { background: var(--red-glow); color: var(--red); }
+    .icon-doc { background: var(--blue-glow); color: var(--blue); }
+    .icon-xls { background: var(--green-glow); color: var(--green); }
+    .icon-img { background: var(--purple-glow); color: var(--purple); }
+    .icon-ppt { background: var(--orange-glow); color: var(--orange); }
 
     .dropzone-text {
-      font-size: 16px;
+      font-size: 17px;
       color: var(--text-muted);
       margin-bottom: 8px;
     }
 
-    .dropzone-text strong { color: var(--accent); }
+    .dropzone-text strong {
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
 
     .dropzone-hint {
       font-size: 13px;
@@ -475,196 +659,171 @@ app.get("/", (_req, res) => {
       cursor: pointer;
     }
 
-    /* Format tags */
-    .formats {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 20px;
-      justify-content: center;
-    }
-
-    .format-tag {
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 500;
-      border: 1px solid transparent;
-    }
-
-    .format-tag.pdf { background: rgba(239, 68, 68, 0.1); color: var(--pdf-color); border-color: rgba(239, 68, 68, 0.2); }
-    .format-tag.image { background: rgba(168, 85, 247, 0.1); color: var(--image-color); border-color: rgba(168, 85, 247, 0.2); }
-    .format-tag.word { background: rgba(59, 130, 246, 0.1); color: var(--word-color); border-color: rgba(59, 130, 246, 0.2); }
-    .format-tag.excel { background: rgba(34, 197, 94, 0.1); color: var(--excel-color); border-color: rgba(34, 197, 94, 0.2); }
-    .format-tag.text { background: rgba(113, 113, 122, 0.1); color: var(--text-file-color); border-color: rgba(113, 113, 122, 0.2); }
-    .format-tag.ppt { background: rgba(249, 115, 22, 0.1); color: var(--ppt-color); border-color: rgba(249, 115, 22, 0.2); }
-
     /* Stats */
     .stats {
       display: flex;
-      gap: 10px;
-      margin-top: 20px;
+      gap: 12px;
+      margin-top: 24px;
       flex-wrap: wrap;
     }
 
     .stat {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 14px;
-      background: var(--bg-elevated);
-      border-radius: 10px;
-      font-size: 13px;
+      gap: 10px;
+      padding: 12px 18px;
+      background: var(--elevated);
+      border-radius: 14px;
+      font-size: 14px;
       border: 1px solid var(--border);
     }
 
     .stat-dot {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
     }
 
-    .stat-dot.pdf { background: var(--pdf-color); }
-    .stat-dot.image { background: var(--image-color); }
-    .stat-dot.word { background: var(--word-color); }
-    .stat-dot.excel { background: var(--excel-color); }
-    .stat-dot.text { background: var(--text-file-color); }
-    .stat-dot.ppt { background: var(--ppt-color); }
-    .stat-dot.total { background: var(--accent); }
+    .stat-dot.pdf { background: var(--red); box-shadow: 0 0 10px var(--red); }
+    .stat-dot.word { background: var(--blue); box-shadow: 0 0 10px var(--blue); }
+    .stat-dot.excel { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .stat-dot.image { background: var(--purple); box-shadow: 0 0 10px var(--purple); }
+    .stat-dot.text { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+    .stat-dot.total { background: var(--pink); box-shadow: 0 0 10px var(--pink); }
 
     .stat-value {
       font-family: 'JetBrains Mono', monospace;
-      font-weight: 500;
-      color: var(--accent);
+      font-weight: 600;
+      color: var(--text);
     }
 
     /* Options */
     .options {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-      padding: 20px;
-      background: var(--bg-elevated);
-      border-radius: 14px;
+      gap: 20px;
+      margin-bottom: 28px;
+      padding: 24px;
+      background: var(--elevated);
+      border-radius: 18px;
       border: 1px solid var(--border);
     }
 
     .option-group label {
       display: block;
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
       color: var(--text-dim);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
 
     .option-select {
       width: 100%;
-      padding: 10px 14px;
-      background: var(--bg-surface);
+      padding: 14px 18px;
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       color: var(--text);
-      font-family: 'Inter', sans-serif;
+      font-family: 'Outfit', sans-serif;
       font-size: 14px;
+      font-weight: 500;
       cursor: pointer;
       appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a1b2' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
-      background-position: right 12px center;
+      background-position: right 14px center;
+      transition: border-color 0.2s;
     }
 
     .option-select:focus {
       outline: none;
-      border-color: var(--accent);
+      border-color: var(--purple);
     }
 
     /* File List */
     .file-list {
       list-style: none;
-      margin: 0 0 20px;
+      margin: 0 0 24px;
       padding: 0;
-      max-height: 420px;
+      max-height: 400px;
       overflow-y: auto;
     }
 
     .file-item {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
-      background: var(--bg-elevated);
+      gap: 14px;
+      padding: 16px 18px;
+      background: var(--elevated);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      margin-bottom: 8px;
+      border-radius: 16px;
+      margin-bottom: 10px;
       cursor: grab;
-      transition: all 0.15s ease;
-      user-select: none;
+      transition: all 0.2s ease;
     }
 
     .file-item:hover {
-      border-color: var(--border-active);
-      background: var(--bg-hover);
+      border-color: var(--purple);
+      background: var(--purple-glow);
     }
 
     .file-item.dragging { opacity: 0.5; transform: scale(0.98); }
-    .file-item.drag-over-item { border-color: var(--accent); background: var(--accent-glow); }
+    .file-item.drag-over-item { border-color: var(--pink); background: var(--pink-glow); }
 
     .drag-handle {
       display: flex;
       flex-direction: column;
-      gap: 3px;
-      padding: 4px;
-      opacity: 0.3;
-      transition: opacity 0.15s;
+      gap: 4px;
+      padding: 6px;
+      opacity: 0.4;
+      transition: opacity 0.2s;
     }
 
-    .file-item:hover .drag-handle { opacity: 0.6; }
+    .file-item:hover .drag-handle { opacity: 0.8; }
 
     .drag-handle span {
       display: block;
-      width: 14px;
+      width: 16px;
       height: 2px;
       background: var(--text);
-      border-radius: 1px;
+      border-radius: 2px;
     }
 
     .file-type {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 800;
       font-family: 'JetBrains Mono', monospace;
       flex-shrink: 0;
     }
 
-    .file-type.pdf { background: rgba(239, 68, 68, 0.12); color: var(--pdf-color); }
-    .file-type.image { background: rgba(168, 85, 247, 0.12); color: var(--image-color); }
-    .file-type.word { background: rgba(59, 130, 246, 0.12); color: var(--word-color); }
-    .file-type.excel { background: rgba(34, 197, 94, 0.12); color: var(--excel-color); }
-    .file-type.text { background: rgba(113, 113, 122, 0.12); color: var(--text-file-color); }
-    .file-type.markdown { background: rgba(113, 113, 122, 0.12); color: var(--text-muted); }
-    .file-type.html { background: rgba(249, 115, 22, 0.12); color: var(--ppt-color); }
-    .file-type.powerpoint { background: rgba(249, 115, 22, 0.12); color: var(--ppt-color); }
+    .file-type.pdf { background: var(--red-glow); color: var(--red); }
+    .file-type.image { background: var(--purple-glow); color: var(--purple); }
+    .file-type.word { background: var(--blue-glow); color: var(--blue); }
+    .file-type.excel { background: var(--green-glow); color: var(--green); }
+    .file-type.text, .file-type.markdown, .file-type.html { background: var(--cyan-glow); color: var(--cyan); }
+    .file-type.powerpoint { background: var(--orange-glow); color: var(--orange); }
 
     .file-index {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
+      font-size: 13px;
+      font-weight: 600;
       color: var(--text-dim);
-      min-width: 24px;
+      min-width: 28px;
     }
 
     .file-info { flex: 1; min-width: 0; }
 
     .file-name {
-      font-size: 14px;
+      font-size: 15px;
+      font-weight: 500;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -674,36 +833,37 @@ app.get("/", (_req, res) => {
       font-size: 12px;
       color: var(--text-dim);
       font-family: 'JetBrains Mono', monospace;
+      margin-top: 2px;
     }
 
     .file-remove {
-      width: 32px;
-      height: 32px;
+      width: 36px;
+      height: 36px;
       border: none;
       background: transparent;
       color: var(--text-dim);
       cursor: pointer;
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
-      transition: all 0.15s;
+      font-size: 18px;
+      transition: all 0.2s;
     }
 
-    .file-remove:hover { background: var(--error-bg); color: var(--error); }
+    .file-remove:hover { background: var(--red-glow); color: var(--red); }
 
     .empty-state {
       text-align: center;
-      padding: 48px 20px;
+      padding: 60px 24px;
       color: var(--text-dim);
     }
 
-    .empty-state-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+    .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
 
     /* Progress */
     .progress-wrap {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
       display: none;
     }
 
@@ -712,25 +872,32 @@ app.get("/", (_req, res) => {
     .progress-label {
       display: flex;
       justify-content: space-between;
-      margin-bottom: 10px;
-      font-size: 13px;
+      margin-bottom: 12px;
+      font-size: 14px;
     }
 
     .progress-text { color: var(--text-muted); }
-    .progress-percent { font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+    
+    .progress-percent { 
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
 
     .progress-bar {
-      height: 8px;
-      background: var(--bg-elevated);
-      border-radius: 4px;
+      height: 10px;
+      background: var(--elevated);
+      border-radius: 6px;
       overflow: hidden;
       border: 1px solid var(--border);
     }
 
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--accent-dim), var(--accent));
-      border-radius: 4px;
+      background: var(--gradient-primary);
+      border-radius: 6px;
       width: 0%;
       transition: width 0.3s ease;
     }
@@ -738,24 +905,24 @@ app.get("/", (_req, res) => {
     /* Button */
     .merge-btn {
       width: 100%;
-      padding: 18px 24px;
+      padding: 20px 28px;
       border: none;
-      border-radius: 14px;
-      background: linear-gradient(135deg, var(--accent) 0%, #ea580c 100%);
+      border-radius: 16px;
+      background: var(--gradient-primary);
       color: white;
-      font-family: 'Inter', sans-serif;
-      font-size: 16px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 17px;
       font-weight: 700;
       cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 24px rgba(249, 115, 22, 0.3);
+      transition: all 0.3s ease;
+      box-shadow: 0 8px 30px rgba(255, 107, 157, 0.3);
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 1.5px;
     }
 
     .merge-btn:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 32px rgba(249, 115, 22, 0.4);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(255, 107, 157, 0.4);
     }
 
     .merge-btn:disabled {
@@ -766,71 +933,73 @@ app.get("/", (_req, res) => {
 
     /* Status */
     .status {
-      padding: 14px 18px;
-      border-radius: 12px;
-      font-size: 14px;
-      margin-top: 16px;
+      padding: 16px 20px;
+      border-radius: 14px;
+      font-size: 15px;
+      margin-top: 20px;
       display: none;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      font-weight: 500;
     }
 
     .status.visible { display: flex; }
 
     .status.success {
-      background: rgba(34, 197, 94, 0.1);
-      border: 1px solid rgba(34, 197, 94, 0.2);
-      color: var(--success);
+      background: var(--green-glow);
+      border: 1px solid rgba(114, 239, 221, 0.3);
+      color: var(--green);
     }
 
     .status.error {
-      background: var(--error-bg);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      color: var(--error);
+      background: var(--red-glow);
+      border: 1px solid rgba(239, 71, 111, 0.3);
+      color: var(--red);
     }
 
     /* Guide */
     .guide {
-      background: var(--bg-surface);
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 20px;
+      border-radius: 24px;
       overflow: hidden;
     }
 
     .guide-header {
-      padding: 20px 24px;
+      padding: 24px 28px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      transition: background 0.15s;
+      transition: background 0.2s;
     }
 
-    .guide-header:hover { background: var(--bg-elevated); }
+    .guide-header:hover { background: var(--elevated); }
 
     .guide-title {
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-weight: 600;
+      gap: 14px;
+      font-weight: 700;
+      font-size: 16px;
     }
 
     .guide-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--accent-glow);
-      border-radius: 10px;
+      width: 44px;
+      height: 44px;
+      background: var(--gradient-cool);
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
+      font-size: 20px;
     }
 
     .guide-chevron {
-      width: 20px;
-      height: 20px;
+      width: 24px;
+      height: 24px;
       stroke: var(--text-dim);
-      transition: transform 0.2s ease;
+      transition: transform 0.3s ease;
     }
 
     .guide.open .guide-chevron { transform: rotate(180deg); }
@@ -838,25 +1007,27 @@ app.get("/", (_req, res) => {
     .guide-content {
       max-height: 0;
       overflow: hidden;
-      transition: max-height 0.3s ease;
+      transition: max-height 0.4s ease;
     }
 
-    .guide.open .guide-content { max-height: 1000px; }
+    .guide.open .guide-content { max-height: 1200px; }
 
     .guide-inner {
-      padding: 0 24px 24px;
+      padding: 0 28px 28px;
       border-top: 1px solid var(--border);
     }
 
-    .guide-section { margin-top: 24px; }
+    .guide-section { margin-top: 28px; }
 
     .guide-section h3 {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--accent);
-      margin: 0 0 12px;
+      font-size: 13px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
+      margin: 0 0 14px;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
     .guide-section ul {
@@ -867,111 +1038,133 @@ app.get("/", (_req, res) => {
     .guide-section li {
       font-size: 14px;
       color: var(--text-muted);
-      margin-bottom: 8px;
-      line-height: 1.6;
+      margin-bottom: 10px;
+      line-height: 1.7;
     }
 
-    .guide-section li::marker { color: var(--accent); }
-
-    .format-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 12px;
-    }
-
-    .format-item {
-      padding: 12px;
-      background: var(--bg-elevated);
-      border-radius: 10px;
-      border: 1px solid var(--border);
-    }
-
-    .format-item-title {
-      font-weight: 600;
-      font-size: 13px;
-      margin-bottom: 4px;
-    }
-
-    .format-item-ext {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--text-dim);
-    }
+    .guide-section li::marker { color: var(--purple); }
 
     footer {
       text-align: center;
-      margin-top: 40px;
-      padding-top: 24px;
+      margin-top: 48px;
+      padding-top: 28px;
       border-top: 1px solid var(--border);
       color: var(--text-dim);
-      font-size: 13px;
+      font-size: 14px;
     }
 
-    footer a { color: var(--accent); text-decoration: none; }
+    footer a { 
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
     footer a:hover { text-decoration: underline; }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(12px); }
+    /* Animations */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    .card { animation: fadeIn 0.5s ease backwards; }
-    .card:nth-child(1) { animation-delay: 0.1s; }
-    .card:nth-child(2) { animation-delay: 0.2s; }
-    .guide { animation: fadeIn 0.5s ease 0.35s backwards; }
+    .hero { animation: fadeInUp 0.6s ease backwards; }
+    .benefits { animation: fadeInUp 0.6s ease 0.15s backwards; }
+    .formats-showcase { animation: fadeInUp 0.6s ease 0.25s backwards; }
+    .card:nth-child(1) { animation: fadeInUp 0.6s ease 0.35s backwards; }
+    .card:nth-child(2) { animation: fadeInUp 0.6s ease 0.45s backwards; }
+    .guide { animation: fadeInUp 0.6s ease 0.55s backwards; }
 
     .file-list::-webkit-scrollbar { width: 8px; }
-    .file-list::-webkit-scrollbar-track { background: var(--bg-elevated); border-radius: 4px; }
-    .file-list::-webkit-scrollbar-thumb { background: var(--border-active); border-radius: 4px; }
+    .file-list::-webkit-scrollbar-track { background: var(--elevated); border-radius: 4px; }
+    .file-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .file-list::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 36px; }
+      .tagline { font-size: 16px; }
+      .benefits { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
+    <!-- Hero Section -->
+    <section class="hero">
       <div class="logo">📄</div>
       <h1>Master Merge Tool</h1>
-      <p class="tagline">Convert any document into one unified PDF</p>
-    </header>
+      <p class="tagline">The <span class="tagline-highlight">easiest way</span> to combine all your documents into one PDF</p>
+    </section>
 
+    <!-- Benefits -->
+    <section class="benefits">
+      <div class="benefit">
+        <div class="benefit-icon">🚀</div>
+        <div class="benefit-title">Lightning Fast</div>
+        <div class="benefit-desc">Convert and merge dozens of files in seconds. No waiting, no signup, no hassle—just instant results.</div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon">📁</div>
+        <div class="benefit-title">15+ File Formats</div>
+        <div class="benefit-desc">PDF, Word, Excel, PowerPoint, images, text files, Markdown, and HTML—all supported in one tool.</div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon">🔒</div>
+        <div class="benefit-title">100% Private</div>
+        <div class="benefit-desc">Your files are processed server-side and immediately deleted. Nothing is ever stored or shared.</div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon">🗜️</div>
+        <div class="benefit-title">Smart Compression</div>
+        <div class="benefit-desc">Choose your quality level—from crisp prints to tiny email attachments. You're in control.</div>
+      </div>
+    </section>
+
+    <!-- Format Showcase -->
+    <section class="formats-showcase">
+      <div class="formats-title">Supported File Types</div>
+      <div class="formats-grid">
+        <span class="format-badge pdf">.PDF</span>
+        <span class="format-badge word">.DOCX</span>
+        <span class="format-badge word">.DOC</span>
+        <span class="format-badge excel">.XLSX</span>
+        <span class="format-badge excel">.XLS</span>
+        <span class="format-badge excel">.CSV</span>
+        <span class="format-badge ppt">.PPTX</span>
+        <span class="format-badge image">.JPG</span>
+        <span class="format-badge image">.PNG</span>
+        <span class="format-badge image">.GIF</span>
+        <span class="format-badge image">.WEBP</span>
+        <span class="format-badge text">.TXT</span>
+        <span class="format-badge text">.MD</span>
+        <span class="format-badge text">.HTML</span>
+      </div>
+    </section>
+
+    <!-- Step 1: Upload -->
     <div class="card">
       <div class="card-header">
         <span class="card-number">1</span>
         <div>
-          <div class="card-title">Upload Files</div>
-          <div class="card-subtitle">Drop a folder or select files of any supported type</div>
+          <div class="card-title">Upload Your Files</div>
+          <div class="card-subtitle">Drop a folder or pick individual documents</div>
         </div>
       </div>
 
       <div class="dropzone" id="dropzone">
         <div class="dropzone-icons">
           <span class="icon-pdf">PDF</span>
-          <span class="icon-word">DOC</span>
-          <span class="icon-excel">XLS</span>
+          <span class="icon-doc">DOC</span>
+          <span class="icon-xls">XLS</span>
           <span class="icon-img">IMG</span>
           <span class="icon-ppt">PPT</span>
         </div>
         <div class="dropzone-text">
-          <strong>Drop files or folder here</strong> or click to browse
+          <strong>Drop files here</strong> or click to browse
         </div>
-        <div class="dropzone-hint">Supports 15+ file formats including Office documents</div>
+        <div class="dropzone-hint">Drag entire folders for batch upload (Chrome/Edge)</div>
         <input type="file" id="fileInput" multiple webkitdirectory />
-      </div>
-
-      <div class="formats">
-        <span class="format-tag pdf">.pdf</span>
-        <span class="format-tag word">.docx</span>
-        <span class="format-tag word">.doc</span>
-        <span class="format-tag excel">.xlsx</span>
-        <span class="format-tag excel">.xls</span>
-        <span class="format-tag excel">.csv</span>
-        <span class="format-tag ppt">.pptx</span>
-        <span class="format-tag image">.jpg</span>
-        <span class="format-tag image">.png</span>
-        <span class="format-tag image">.gif</span>
-        <span class="format-tag image">.webp</span>
-        <span class="format-tag text">.txt</span>
-        <span class="format-tag text">.md</span>
-        <span class="format-tag text">.html</span>
       </div>
 
       <div class="stats" id="stats" style="display:none;">
@@ -980,43 +1173,44 @@ app.get("/", (_req, res) => {
         <div class="stat"><span class="stat-dot excel"></span>Sheets: <span class="stat-value" id="excelCount">0</span></div>
         <div class="stat"><span class="stat-dot image"></span>Images: <span class="stat-value" id="imageCount">0</span></div>
         <div class="stat"><span class="stat-dot text"></span>Text: <span class="stat-value" id="textCount">0</span></div>
-        <div class="stat"><span class="stat-dot total"></span>Size: <span class="stat-value" id="totalSize">0 KB</span></div>
+        <div class="stat"><span class="stat-dot total"></span>Total: <span class="stat-value" id="totalSize">0 KB</span></div>
       </div>
     </div>
 
+    <!-- Step 2: Configure & Merge -->
     <div class="card">
       <div class="card-header">
         <span class="card-number">2</span>
         <div>
-          <div class="card-title">Configure & Merge</div>
-          <div class="card-subtitle">Drag to reorder, set quality, then create your PDF</div>
+          <div class="card-title">Configure & Create</div>
+          <div class="card-subtitle">Reorder files, set quality, generate your PDF</div>
         </div>
       </div>
 
       <div class="options">
         <div class="option-group">
-          <label>Compression Level</label>
+          <label>Quality Level</label>
           <select class="option-select" id="qualitySelect">
-            <option value="high">High Quality (larger file)</option>
-            <option value="medium" selected>Medium (balanced)</option>
-            <option value="low">Low Quality (smallest file)</option>
+            <option value="high">🖨️ High — Best for printing</option>
+            <option value="medium" selected>⚖️ Medium — Balanced</option>
+            <option value="low">📧 Low — Email friendly</option>
           </select>
         </div>
         <div class="option-group">
-          <label>Output Filename</label>
+          <label>Output Name</label>
           <select class="option-select" id="filenameSelect">
             <option value="merged">merged.pdf</option>
             <option value="combined">combined.pdf</option>
             <option value="master">master.pdf</option>
-            <option value="output">output.pdf</option>
+            <option value="document">document.pdf</option>
           </select>
         </div>
       </div>
 
       <ul class="file-list" id="fileList">
         <li class="empty-state">
-          <div class="empty-state-icon">📁</div>
-          <div>No files yet. Upload documents above to begin.</div>
+          <div class="empty-state-icon">📂</div>
+          <div>Drop some files above to get started!</div>
         </li>
       </ul>
 
@@ -1032,64 +1226,44 @@ app.get("/", (_req, res) => {
 
       <div class="status" id="status"></div>
 
-      <button class="merge-btn" id="mergeBtn" disabled>Create Master PDF</button>
+      <button class="merge-btn" id="mergeBtn" disabled>✨ Create Master PDF</button>
     </div>
 
+    <!-- Guide -->
     <div class="guide" id="guide">
       <div class="guide-header" onclick="toggleGuide()">
         <div class="guide-title">
-          <span class="guide-icon">?</span>
-          How to Use
+          <span class="guide-icon">💡</span>
+          Tips & Help
         </div>
         <svg class="guide-chevron" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="guide-content">
         <div class="guide-inner">
           <div class="guide-section">
-            <h3>Supported Formats</h3>
-            <div class="format-grid">
-              <div class="format-item">
-                <div class="format-item-title">📄 PDF</div>
-                <div class="format-item-ext">.pdf</div>
-              </div>
-              <div class="format-item">
-                <div class="format-item-title">📝 Word</div>
-                <div class="format-item-ext">.docx, .doc</div>
-              </div>
-              <div class="format-item">
-                <div class="format-item-title">📊 Excel</div>
-                <div class="format-item-ext">.xlsx, .xls, .csv</div>
-              </div>
-              <div class="format-item">
-                <div class="format-item-title">📽️ PowerPoint</div>
-                <div class="format-item-ext">.pptx, .ppt</div>
-              </div>
-              <div class="format-item">
-                <div class="format-item-title">🖼️ Images</div>
-                <div class="format-item-ext">.jpg, .png, .gif, .webp</div>
-              </div>
-              <div class="format-item">
-                <div class="format-item-title">📃 Text</div>
-                <div class="format-item-ext">.txt, .md, .html</div>
-              </div>
-            </div>
-          </div>
-          <div class="guide-section">
-            <h3>Steps</h3>
+            <h3>How It Works</h3>
             <ul>
-              <li><strong>Upload:</strong> Drag files/folders onto the drop zone or click to browse</li>
-              <li><strong>Reorder:</strong> Drag items by the handle (≡) to change merge order</li>
-              <li><strong>Configure:</strong> Choose compression level and output filename</li>
-              <li><strong>Merge:</strong> Click the button and download your combined PDF</li>
+              <li><strong>Upload:</strong> Drag files or an entire folder onto the drop zone</li>
+              <li><strong>Reorder:</strong> Drag items by the handle to arrange merge order</li>
+              <li><strong>Configure:</strong> Pick your compression level and filename</li>
+              <li><strong>Download:</strong> Click the button and get your merged PDF instantly</li>
             </ul>
           </div>
           <div class="guide-section">
-            <h3>Tips</h3>
+            <h3>Quality Settings</h3>
             <ul>
-              <li>Use <strong>High Quality</strong> for documents you'll print</li>
-              <li>Use <strong>Low Quality</strong> for email attachments to reduce size</li>
-              <li>Excel sheets render as formatted tables with headers</li>
-              <li>Images are automatically scaled to fit standard pages</li>
+              <li><strong>High:</strong> Maximum detail, ideal for printing documents</li>
+              <li><strong>Medium:</strong> Great balance of size and quality for most uses</li>
+              <li><strong>Low:</strong> Smallest file size, perfect for email attachments</li>
+            </ul>
+          </div>
+          <div class="guide-section">
+            <h3>Pro Tips</h3>
+            <ul>
+              <li>Excel sheets automatically render with formatted tables</li>
+              <li>Images are scaled to fit standard letter-size pages</li>
+              <li>Each file gets a header showing its original filename</li>
+              <li>Files are processed in the order shown—drag to reorder!</li>
             </ul>
           </div>
         </div>
@@ -1097,8 +1271,8 @@ app.get("/", (_req, res) => {
     </div>
 
     <footer>
-      Files processed server-side, never stored. 
-      Built with <a href="https://pdf-lib.js.org/" target="_blank">pdf-lib</a>.
+      Files are processed privately and never stored.
+      <br>Made with <a href="https://pdf-lib.js.org/" target="_blank">pdf-lib</a> • <a href="https://sharp.pixelplumbing.com/" target="_blank">sharp</a> • <a href="https://github.com/draphael123/mastermergertool" target="_blank">GitHub</a>
     </footer>
   </div>
 
@@ -1168,8 +1342,7 @@ app.get("/", (_req, res) => {
   }
 
   function getTypeLabel(type) {
-    const labels = { pdf:'PDF', image:'IMG', word:'DOC', excel:'XLS', text:'TXT', markdown:'MD', html:'HTM', powerpoint:'PPT' };
-    return labels[type] || '?';
+    return { pdf:'PDF', image:'IMG', word:'DOC', excel:'XLS', text:'TXT', markdown:'MD', html:'HTM', powerpoint:'PPT' }[type] || '?';
   }
 
   function updateStats() {
@@ -1195,7 +1368,7 @@ app.get("/", (_req, res) => {
   function renderFileList() {
     fileList.innerHTML = '';
     if (files.length === 0) {
-      fileList.innerHTML = '<li class="empty-state"><div class="empty-state-icon">📁</div><div>No files yet. Upload documents above to begin.</div></li>';
+      fileList.innerHTML = '<li class="empty-state"><div class="empty-state-icon">📂</div><div>Drop some files above to get started!</div></li>';
       return;
     }
 
@@ -1314,7 +1487,7 @@ app.get("/", (_req, res) => {
 
   function showStatus(msg, err = false) {
     statusEl.className = 'status visible ' + (err ? 'error' : 'success');
-    statusEl.innerHTML = (err ? '⚠ ' : '✓ ') + msg;
+    statusEl.innerHTML = (err ? '⚠️ ' : '✅ ') + msg;
   }
 
   function hideStatus() { statusEl.className = 'status'; }
@@ -1356,11 +1529,11 @@ app.get("/", (_req, res) => {
       a.remove();
       URL.revokeObjectURL(url);
 
-      showStatus('PDF created! Download started.');
-      setTimeout(hideProgress, 1500);
+      showStatus('PDF created successfully! Your download has started.');
+      setTimeout(hideProgress, 2000);
     } catch (err) {
       hideProgress();
-      showStatus(err.message || 'Failed to create PDF.', true);
+      showStatus(err.message || 'Something went wrong. Please try again.', true);
     } finally {
       mergeBtn.disabled = false;
     }
@@ -1437,7 +1610,6 @@ app.post("/merge", upload.array("files"), async (req, res) => {
         }
       } catch (err) {
         console.error(`Error processing ${filename}:`, err.message);
-        // Add error page
         const errorText = `Error processing file: ${filename}\n\n${err.message}`;
         await textToPdfPages(errorText, merged, 'Error');
       }
